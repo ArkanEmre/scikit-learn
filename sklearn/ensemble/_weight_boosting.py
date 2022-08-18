@@ -23,28 +23,26 @@ The module structure is the following:
 #
 # License: BSD 3 clause
 
-from abc import ABCMeta, abstractmethod
-
-from numbers import Integral, Real
-import numpy as np
-
 import warnings
+from abc import ABCMeta, abstractmethod
+from numbers import Integral, Real
 
+import numpy as np
 from scipy.special import xlogy
 
-from ._base import BaseEnsemble
 from ..base import ClassifierMixin, RegressorMixin, is_classifier, is_regressor
-
-from ..tree import DecisionTreeClassifier, DecisionTreeRegressor
-from ..utils import check_random_state, _safe_indexing
-from ..utils.extmath import softmax
-from ..utils.extmath import stable_cumsum
 from ..metrics import accuracy_score, r2_score
-from ..utils.validation import check_is_fitted
-from ..utils.validation import _check_sample_weight
-from ..utils.validation import has_fit_parameter
-from ..utils.validation import _num_samples
+from ..tree import DecisionTreeClassifier, DecisionTreeRegressor
+from ..utils import _safe_indexing, check_random_state
 from ..utils._param_validation import Interval, StrOptions
+from ..utils.extmath import softmax, stable_cumsum
+from ..utils.validation import (
+    _check_sample_weight,
+    _num_samples,
+    check_is_fitted,
+    has_fit_parameter,
+)
+from ._base import BaseEnsemble
 
 __all__ = [
     "AdaBoostClassifier",
@@ -76,7 +74,6 @@ class BaseWeightBoosting(BaseEnsemble, metaclass=ABCMeta):
         learning_rate=1.0,
         random_state=None,
     ):
-
         super().__init__(
             base_estimator=base_estimator,
             n_estimators=n_estimators,
@@ -468,7 +465,6 @@ class AdaBoostClassifier(ClassifierMixin, BaseWeightBoosting):
         algorithm="SAMME.R",
         random_state=None,
     ):
-
         super().__init__(
             base_estimator=base_estimator,
             n_estimators=n_estimators,
@@ -851,6 +847,65 @@ class AdaBoostClassifier(ClassifierMixin, BaseWeightBoosting):
         decision = self.decision_function(X)
         return self._compute_proba_from_decision(decision, n_classes)
 
+    def linear_predict_proba(self, X):
+        """Compute the linear probability of ``X``,
+
+        The predicted class probabilities of an input sample is computed as
+        the weighted mean predicted class probabilities of the classifiers
+        in the ensemble. Here the probabilities do not undergo a log
+        transformation and softmax.
+
+        Parameters
+        ----------
+        X : {array-like, sparse matrix} of shape (n_samples, n_features)
+            The training input samples. Sparse matrix can be CSC, CSR, COO,
+            DOK, or LIL. COO, DOK, and LIL are converted to CSR.
+
+        Returns
+        -------
+        p : ndarray of shape (n_samples, n_classes)
+            The class probabilities of the input samples. The order of
+            outputs is the same of that of the :term:`classes_` attribute.
+        """
+        check_is_fitted(self)
+        X = self._check_X(X)
+        if self.algorithm != "SAMME":
+            raise ValueError(
+                f"The 'algorithm' parameter of {self.__class__.__name__!r} must be"
+                f" 'SAMME' for the linear predictions. Got {self.algorithm!r} instead."
+            )
+        check_is_fitted(self)
+        n_classes = self.n_classes_
+
+        if n_classes == 1:
+            return np.ones((_num_samples(X), 1))
+
+        proba = np.array([estimator.predict_proba(X) for estimator in self.estimators_])
+
+        return np.average(
+            a=proba, weights=self.estimator_weights_[: len(self.estimators_)], axis=0
+        )
+
+    def linear_predict(self, X):
+        """Predict classes for X using the linear probability.
+
+        The predicted class of an input sample is computed as the weighted mean
+        prediction of the classifiers in the ensemble. Here the probabilities do
+        not undergo a log transformation and softmax.
+
+        Parameters
+        ----------
+        X : {array-like, sparse matrix} of shape (n_samples, n_features)
+            The training input samples. Sparse matrix can be CSC, CSR, COO,
+            DOK, or LIL. COO, DOK, and LIL are converted to CSR.
+
+        Returns
+        -------
+        y : ndarray of shape (n_samples,)
+            The predicted classes.
+        """
+        return self.linear_predict_proba(X).argmax(axis=1)
+
     def staged_predict_proba(self, X):
         """Predict class probabilities for X.
 
@@ -1025,7 +1080,6 @@ class AdaBoostRegressor(RegressorMixin, BaseWeightBoosting):
         loss="linear",
         random_state=None,
     ):
-
         super().__init__(
             base_estimator=base_estimator,
             n_estimators=n_estimators,
